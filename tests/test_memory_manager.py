@@ -2,6 +2,9 @@ import pytest
 
 from src.memory.memory_manager import MemoryManager
 from src.memory.memory_schema import DrivingMemory
+from src.memory.strategies.compression import (
+    CompressionStrategy,
+)
 from src.memory.strategies.core_safety import (
     CoreSafetyStrategy,
 )
@@ -62,6 +65,18 @@ def create_core_safety_manager(
     return MemoryManager(
         capacity=capacity,
         strategy=CoreSafetyStrategy(),
+    )
+
+
+def create_compression_manager(
+    capacity: int = 3,
+    similarity_window: float = 10.0,
+) -> MemoryManager:
+    return MemoryManager(
+        capacity=capacity,
+        strategy=CompressionStrategy(
+            similarity_window=similarity_window,
+        ),
     )
 
 
@@ -742,4 +757,406 @@ def test_switch_to_core_safety_strategy():
     assert isinstance(
         manager.strategy,
         CoreSafetyStrategy,
+    )
+
+
+def test_compression_identifies_similar_memories():
+    strategy = CompressionStrategy(
+        similarity_window=10.0,
+    )
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        road_type="urban",
+        weather="clear",
+    )
+
+    second = create_memory(
+        memory_id="second",
+        timestamp=5.0,
+        event_type="red_light",
+        road_type="urban",
+        weather="clear",
+    )
+
+    assert strategy._similar(first, second) is True
+
+
+def test_compression_rejects_different_event_types():
+    strategy = CompressionStrategy()
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+    )
+
+    second = create_memory(
+        memory_id="second",
+        timestamp=2.0,
+        event_type="lane_change",
+    )
+
+    assert strategy._similar(first, second) is False
+
+
+def test_compression_rejects_different_weather():
+    strategy = CompressionStrategy()
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        weather="clear",
+    )
+
+    second = create_memory(
+        memory_id="second",
+        timestamp=2.0,
+        event_type="red_light",
+        weather="rain",
+    )
+
+    assert strategy._similar(first, second) is False
+
+
+def test_compression_rejects_different_road_types():
+    strategy = CompressionStrategy()
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        road_type="urban",
+    )
+
+    second = create_memory(
+        memory_id="second",
+        timestamp=2.0,
+        event_type="red_light",
+        road_type="highway",
+    )
+
+    assert strategy._similar(first, second) is False
+
+
+def test_compression_rejects_events_outside_window():
+    strategy = CompressionStrategy(
+        similarity_window=5.0,
+    )
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+    )
+
+    second = create_memory(
+        memory_id="second",
+        timestamp=10.0,
+        event_type="red_light",
+    )
+
+    assert strategy._similar(first, second) is False
+
+
+def test_compression_merges_similar_memories():
+    manager = create_compression_manager(
+        capacity=2,
+    )
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        description="Stopped at a red light",
+        access_count=2,
+        importance_score=0.4,
+    )
+
+    unrelated = create_memory(
+        memory_id="unrelated",
+        timestamp=2.0,
+        event_type="lane_change",
+    )
+
+    duplicate = create_memory(
+        memory_id="duplicate",
+        timestamp=3.0,
+        event_type="red_light",
+        description="Stopped at another red light",
+        access_count=3,
+        importance_score=0.8,
+    )
+
+    manager.add_memory(first)
+    manager.add_memory(unrelated)
+    manager.add_memory(duplicate)
+
+    stored_ids = get_memory_ids(manager)
+
+    assert len(manager) == 2
+    assert "first" in stored_ids
+    assert "unrelated" in stored_ids
+    assert "duplicate" not in stored_ids
+
+
+def test_compression_updates_access_count():
+    manager = create_compression_manager(
+        capacity=1,
+    )
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        access_count=2,
+    )
+
+    duplicate = create_memory(
+        memory_id="duplicate",
+        timestamp=2.0,
+        event_type="red_light",
+        access_count=3,
+    )
+
+    manager.add_memory(first)
+    manager.add_memory(duplicate)
+
+    compressed = manager.get_memory("first")
+
+    assert compressed is not None
+    assert compressed.access_count == 6
+
+
+def test_compression_keeps_highest_importance():
+    manager = create_compression_manager(
+        capacity=1,
+    )
+
+    first = create_memory(
+        memory_id="first",
+        timestamp=1.0,
+        event_type="red_light",
+        importance_score=0.3,
+    )
+
+    duplicate = create_memory(
+        memory_id="duplicate",
+        timestamp=2.0,
+        event_type="red_light",
+        importance_score=0.9,
+    )
+
+    manager.add_memory(first)
+    manager.add_memory(duplicate)
+
+    compressed = manager.get_memory("first")
+
+    assert compressed is not None
+    assert compressed.importance_score == 0.9
+
+
+def test_compression_updates_timestamp():
+    manager = create_compression_manager(
+        capacity=1,
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="first",
+            timestamp=1.0,
+            event_type="red_light",
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="duplicate",
+            timestamp=8.0,
+            event_type="red_light",
+        )
+    )
+
+    compressed = manager.get_memory("first")
+
+    assert compressed is not None
+    assert compressed.timestamp == 8.0
+
+
+def test_compression_marks_description_repeated():
+    manager = create_compression_manager(
+        capacity=1,
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="first",
+            timestamp=1.0,
+            event_type="red_light",
+            description="Stopped at a red light",
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="duplicate",
+            timestamp=2.0,
+            event_type="red_light",
+        )
+    )
+
+    compressed = manager.get_memory("first")
+
+    assert compressed is not None
+    assert compressed.description == ("Stopped at a red light (repeated)")
+
+
+def test_compression_preserves_protection():
+    manager = create_compression_manager(
+        capacity=1,
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="first",
+            timestamp=1.0,
+            event_type="collision",
+            protected=False,
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="duplicate",
+            timestamp=2.0,
+            event_type="collision",
+            protected=True,
+        )
+    )
+
+    compressed = manager.get_memory("first")
+
+    assert compressed is not None
+    assert compressed.protected is True
+
+
+def test_compression_removes_oldest_when_no_match():
+    manager = create_compression_manager(
+        capacity=2,
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="oldest",
+            timestamp=1.0,
+            event_type="red_light",
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="middle",
+            timestamp=2.0,
+            event_type="lane_change",
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="newest",
+            timestamp=3.0,
+            event_type="pedestrian_crossing",
+        )
+    )
+
+    assert get_memory_ids(manager) == [
+        "middle",
+        "newest",
+    ]
+
+
+def test_compression_does_not_delete_protected_fallback():
+    manager = create_compression_manager(
+        capacity=2,
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="protected",
+            timestamp=1.0,
+            event_type="collision",
+            protected=True,
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="normal_old",
+            timestamp=2.0,
+            event_type="lane_change",
+        )
+    )
+
+    manager.add_memory(
+        create_memory(
+            memory_id="normal_new",
+            timestamp=3.0,
+            event_type="red_light",
+        )
+    )
+
+    stored_ids = get_memory_ids(manager)
+
+    assert "protected" in stored_ids
+    assert "normal_old" not in stored_ids
+    assert "normal_new" in stored_ids
+
+
+def test_compression_rejects_empty_list():
+    strategy = CompressionStrategy()
+
+    with pytest.raises(ValueError):
+        strategy.manage([])
+
+
+def test_compression_rejects_all_protected_without_match():
+    strategy = CompressionStrategy()
+
+    memories = [
+        create_memory(
+            memory_id="first",
+            timestamp=1.0,
+            event_type="collision",
+            protected=True,
+        ),
+        create_memory(
+            memory_id="second",
+            timestamp=20.0,
+            event_type="emergency_vehicle",
+            protected=True,
+        ),
+    ]
+
+    with pytest.raises(RuntimeError):
+        strategy.manage(memories)
+
+
+def test_compression_invalid_similarity_window():
+    with pytest.raises(ValueError):
+        CompressionStrategy(
+            similarity_window=-1.0,
+        )
+
+
+def test_switch_to_compression_strategy():
+    manager = create_fifo_manager()
+
+    manager.set_strategy(CompressionStrategy())
+
+    assert isinstance(
+        manager.strategy,
+        CompressionStrategy,
     )
