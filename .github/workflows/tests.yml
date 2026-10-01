@@ -1,0 +1,21 @@
+name: Offline tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pytest -q
+      - run: python -m scripts.run_pipeline
+      - run: python -m scripts.evaluate --bootstrap-samples 100
+      - run: python -m scripts.evaluate --annotations data/examples/sample_annotations.json --protocol data/examples/sample_protocol.json --split test --bootstrap-samples 100 --output data/results/annotated_ci
+      - run: python -m scripts.start_carla --offline --no-browser --output data/results/launcher_ci

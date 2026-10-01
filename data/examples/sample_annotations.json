@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "label_source": "synthetic_demo",
+  "notes": "Illustrative judgments written for the bundled sample. Not independently collected human relevance labels.",
+  "queries": [
+    {
+      "episode_id": "episode_001",
+      "event_id": "005",
+      "query": "pedestrian crosswalk unexpected school zone safety",
+      "relevance": {
+        "001": 3,
+        "002": 0,
+        "003": 1,
+        "004": 0
+      }
+    },
+    {
+      "episode_id": "episode_002",
+      "event_id": "010",
+      "query": "rain reduced visibility urban driving",
+      "relevance": {
+        "006": 3,
+        "007": 1,
+        "008": 0,
+        "009": 1
+      }
+    }
+  ]
+}

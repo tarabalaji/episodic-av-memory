@@ -928,7 +928,9 @@ def test_compression_updates_access_count():
     compressed = manager.get_memory("first")
 
     assert compressed is not None
-    assert compressed.access_count == 6
+    # Merging is not a retrieval: only sum actual accesses.
+    assert compressed.access_count == 5
+    assert compressed.occurrence_count == 2
 
 
 def test_compression_keeps_highest_importance():

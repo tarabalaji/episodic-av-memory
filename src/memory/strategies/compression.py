@@ -1,3 +1,5 @@
+import math
+from src.memory.errors import MemoryCapacityError
 from src.memory.memory_schema import DrivingMemory
 
 
@@ -6,7 +8,7 @@ class CompressionStrategy:
         self,
         similarity_window: float = 10.0,
     ):
-        if similarity_window < 0:
+        if not math.isfinite(similarity_window) or similarity_window < 0:
             raise ValueError("similarity_window cannot be negative.")
 
         self.similarity_window = similarity_window
@@ -20,7 +22,7 @@ class CompressionStrategy:
 
         ordered_memories = sorted(
             memories,
-            key=lambda memory: memory.timestamp,
+            key=lambda memory: memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp,
         )
 
         for first_index, first in enumerate(ordered_memories):
@@ -37,13 +39,13 @@ class CompressionStrategy:
         removable_memories = [memory for memory in memories if not memory.protected]
 
         if not removable_memories:
-            raise RuntimeError(
+            raise MemoryCapacityError(
                 "Cannot remove a memory because all memories are protected."
             )
 
         oldest_memory = min(
             removable_memories,
-            key=lambda memory: memory.timestamp,
+            key=lambda memory: memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp,
         )
 
         memories.remove(oldest_memory)
@@ -54,6 +56,8 @@ class CompressionStrategy:
         first: DrivingMemory,
         second: DrivingMemory,
     ) -> bool:
+        if first.episode_id != second.episode_id or first.action != second.action or first.outcome != second.outcome:
+            return False
         if first.event_type != second.event_type:
             return False
 
@@ -75,7 +79,14 @@ class CompressionStrategy:
         target: DrivingMemory,
         duplicate: DrivingMemory,
     ) -> None:
-        target.access_count += duplicate.access_count + 1
+        target.access_count += duplicate.access_count
+        target.occurrence_count += duplicate.occurrence_count
+        target.source_memory_ids = list(dict.fromkeys(target.source_memory_ids + duplicate.source_memory_ids))
+        target.sequence_index = max(target.sequence_index, duplicate.sequence_index)
+        target.speed = max(target.speed, duplicate.speed)
+        for name in ("distance_to_obstacle", "time_to_collision"):
+            values = [getattr(m, name) for m in (target, duplicate) if getattr(m, name) is not None]
+            setattr(target, name, min(values) if values else None)
 
         target.importance_score = max(
             target.importance_score,

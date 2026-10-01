@@ -1,3 +1,4 @@
+from src.memory.errors import MemoryCapacityError
 from src.memory.memory_schema import DrivingMemory
 
 
@@ -31,11 +32,11 @@ class ImportanceStrategy:
         removable_memories = [memory for memory in memories if not memory.protected]
 
         if not removable_memories:
-            raise RuntimeError(
+            raise MemoryCapacityError(
                 "Cannot remove a memory because all memories are protected."
             )
 
-        current_time = max(memory.timestamp for memory in memories)
+        current_time = max(memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp for memory in memories)
 
         for memory in memories:
             memory.importance_score = self.calculate_score(
@@ -47,7 +48,7 @@ class ImportanceStrategy:
             removable_memories,
             key=lambda memory: (
                 memory.importance_score,
-                memory.timestamp,
+                memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp,
             ),
         )
 
@@ -150,7 +151,7 @@ class ImportanceStrategy:
         memory: DrivingMemory,
         current_time: float,
     ) -> float:
-        age = max(current_time - memory.timestamp, 0.0)
+        age = max(current_time - (memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp), 0.0)
 
         return 1.0 / (1.0 + age)
 

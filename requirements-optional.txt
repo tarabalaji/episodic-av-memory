@@ -1,0 +1,2 @@
+# Only needed for planner: openai. CARLA must match your simulator installation.
+openai>=1.66,<3

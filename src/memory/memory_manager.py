@@ -1,4 +1,5 @@
 from typing import Protocol
+from copy import deepcopy
 
 from src.memory.memory_schema import DrivingMemory
 
@@ -13,7 +14,7 @@ class MemoryManager:
         capacity: int,
         strategy: MemoryStrategy,
     ):
-        if capacity <= 0:
+        if type(capacity) is not int or capacity <= 0:
             raise ValueError("Capacity must be greater than zero.")
 
         self.capacity = capacity
@@ -24,10 +25,25 @@ class MemoryManager:
         if not isinstance(memory, DrivingMemory):
             raise TypeError("memory must be a DrivingMemory object.")
 
-        self.memories.append(memory)
-
-        while len(self.memories) > self.capacity:
-            self.strategy.manage(self.memories)
+        if self.get_memory(memory.memory_id) is not None:
+            raise ValueError(f"Duplicate memory ID: {memory.memory_id}")
+        previous = list(self.memories)
+        snapshots = [(item, deepcopy(item.__dict__)) for item in previous + [memory]]
+        try:
+            self.memories.append(memory)
+            if hasattr(self.strategy, "protect_critical_memories"):
+                self.strategy.protect_critical_memories(self.memories)
+            while len(self.memories) > self.capacity:
+                count = len(self.memories)
+                self.strategy.manage(self.memories)
+                if len(self.memories) >= count:
+                    raise RuntimeError("Memory strategy did not reduce memory count.")
+        except Exception:
+            self.memories[:] = previous
+            for item, state in snapshots:
+                item.__dict__.clear()
+                item.__dict__.update(state)
+            raise
 
     def get_memories(self) -> list[DrivingMemory]:
         return list(self.memories)

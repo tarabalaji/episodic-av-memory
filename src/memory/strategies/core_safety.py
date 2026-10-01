@@ -1,3 +1,5 @@
+import math
+from src.memory.errors import MemoryCapacityError
 from src.memory.memory_schema import DrivingMemory
 
 
@@ -8,6 +10,7 @@ class CoreSafetyStrategy:
         "pedestrian_crossing",
         "emergency_vehicle",
         "vehicle_cut_in",
+        "cut_in_vehicle",
         "road_obstacle",
     }
 
@@ -27,10 +30,10 @@ class CoreSafetyStrategy:
         critical_ttc: float = 0.5,
         critical_distance: float = 1.0,
     ):
-        if critical_ttc < 0:
+        if not math.isfinite(critical_ttc) or critical_ttc < 0:
             raise ValueError("critical_ttc cannot be negative.")
 
-        if critical_distance < 0:
+        if not math.isfinite(critical_distance) or critical_distance < 0:
             raise ValueError("critical_distance cannot be negative.")
 
         self.critical_ttc = critical_ttc
@@ -83,13 +86,13 @@ class CoreSafetyStrategy:
         removable_memories = [memory for memory in memories if not memory.protected]
 
         if not removable_memories:
-            raise RuntimeError(
+            raise MemoryCapacityError(
                 "Cannot remove a memory because all memories are protected."
             )
 
         oldest_removable = min(
             removable_memories,
-            key=lambda memory: memory.timestamp,
+            key=lambda memory: memory.sequence_index if memory.sequence_index >= 0 else memory.timestamp,
         )
 
         memories.remove(oldest_removable)

@@ -1,0 +1,10 @@
+# Paths are relative to the project root. Events stay in recorded file order.
+events_path: data/raw/sample_events.json
+output_dir: data/processed/demo
+capacity: 5
+strategy: importance
+top_k: 3
+similarity_window: 10.0
+planner: rule_based
+# Set an explicit model only when opting into paid API requests.
+model: null

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "episodes": {
+    "episode_001": {
+      "group_id": "example_clear",
+      "split": "test"
+    },
+    "episode_002": {
+      "group_id": "example_rain",
+      "split": "test"
+    }
+  }
+}
